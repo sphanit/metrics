@@ -34,16 +34,14 @@ class CompareTrajs:
 
         plt.ion()
         rospy.init_node('compare_trajs')
-        try:
-            rospy.Subscriber("/move_base_node/TebLocalPlannerROS/local_plan",Path,self.pathCB)
-            rospy.Subscriber("/move_base_node/TebLocalPlannerROS/traj_time",TimeToGoal,self.ttgCB)
-        except:
-            rospy.Subscriber("/move_base/TebLocalPlannerROS/local_plan",Path,self.pathCB)
-            rospy.Subscriber("/move_base/TebLocalPlannerROS/traj_time",TimeToGoal,self.ttgCB)
-        else:
-            rospy.logerr("Node Name Error..Please check the name of MoveBase node")
-            print("Node Name Error..Please check the name of MoveBase node")
 
+        # Use this for HATEB
+        # rospy.Subscriber("/move_base_node/TebLocalPlannerROS/local_plan",Path,self.pathCB)
+        # rospy.Subscriber("/move_base_node/TebLocalPlannerROS/traj_time",TimeToGoal,self.ttgCB)
+
+        # Use this for S-TEB
+        rospy.Subscriber("/move_base/TebLocalPlannerROS/local_plan",Path,self.pathCB)
+        rospy.Subscriber("/move_base/TebLocalPlannerROS/traj_time",TimeToGoal,self.ttgCB)
 
         self.ttg_pub = rospy.Publisher('ttg', Float64, queue_size=10)
         self.ttg_prev_pub = rospy.Publisher('ttg_diff_prev', Float64, queue_size=10)
