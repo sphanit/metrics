@@ -16,6 +16,7 @@ from actionlib_msgs.msg import GoalStatusArray
 from teb_local_planner.msg import OptimizationCostArray
 import os
 #robot_pose_msg, op_costs
+# costs to look at 0, 1 , 3, 4, 5, 6, 7, 8, 9, 10, 12 or 17
 
 class CompareTrajs:
     def __init__(self):
@@ -186,13 +187,13 @@ class CompareTrajs:
             os.makedirs(dir4_path)
 
         if(self.first_x):
-            #np.savetxt(dir1_path+'/hateb_data_'+sub_name+lt+'.csv',np.column_stack([self.first_x,self.first_y]),delimiter=',', header="first_x,first_y", comments="")
-            #np.savetxt(dir2_path+'/hateb_data_'+sub_name+lt+'.csv',np.column_stack([self.actual_position_x,self.actual_position_y]),delimiter=',', header="actual_x,actual_y", comments="")
-            #np.savetxt(dir3_path+'/hateb_data_'+sub_name+lt+'.csv',np.column_stack([self.ttg,self.ttg_error]),delimiter=',', header="ttg,ttg_error_prev", comments="")
-            #np.savetxt(dir4_path+'/hateb_data_'+sub_name+lt+'.csv',np.column_stack([self.min_hum_dist,self.total_time]),delimiter=',', header="min_human_dist,total_travel_time", comments="")
+            np.savetxt(dir1_path+'/hateb_data_'+sub_name+lt+'.csv',np.column_stack([self.first_x,self.first_y]),delimiter=',', header="first_x,first_y", comments="")
+            np.savetxt(dir2_path+'/hateb_data_'+sub_name+lt+'.csv',np.column_stack([self.actual_position_x,self.actual_position_y]),delimiter=',', header="actual_x,actual_y", comments="")
+            np.savetxt(dir3_path+'/hateb_data_'+sub_name+lt+'.csv',np.column_stack([self.ttg,self.ttg_error]),delimiter=',', header="ttg,ttg_error_prev", comments="")
+            np.savetxt(dir4_path+'/hateb_data_'+sub_name+lt+'.csv',np.column_stack([self.min_hum_dist,self.total_time]),delimiter=',', header="min_human_dist,total_travel_time", comments="")
             print('Saved data files')
-            print('Cost of TTC = ',self.cost_ttc)
-            print(self.ttc_arr)
+            # print('Cost of TTC = ',self.cost_ttc)
+            # print(self.ttc_arr)
             # print(self.first_x)
 
 

@@ -75,7 +75,7 @@ add_message_files(
 generate_messages(
    DEPENDENCIES
    geometry_msgs
-   std_msgs  
+   std_msgs
    nav_msgs
    # Or other packages containing msgs
  )
