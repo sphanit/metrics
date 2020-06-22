@@ -42,6 +42,7 @@ class PlotterHateb:
         self.total_time = -1.0
         self.cost_ttc = 0
         self.ttc_arr = []
+        self.ttc_arr_cost = []
         self.robot_vel_x = []
         self.robot_vel_y = []
         self.robot_vel_theta = []
@@ -167,6 +168,7 @@ class PlotterHateb:
                     self.human_vel = segment.twist.twist
 
     def plot_traj(self):
+        self.cal_ttc()
         plt.clf()
 
         plt.figure(1)
@@ -190,26 +192,83 @@ class PlotterHateb:
             plt.title('velocity_theta')
             plt.axis('equal')
 
-        plt.pause(0.00001)
+        plt.figure(3)
+        plt.plot(self.ttc_arr_cost)
+        plt.axis('equal')
+        plt.title('TTC')
+
+        plt.pause(0.05)
         plt.draw()
         plt.show()
 
     def cal_ttc(self):
+        # double dt = (current_time_ - last_time_).toSec();
+        # double theta = odom_.z;
+        # double costh = cos(theta);
+        # double sinth = sin(theta);
+        #
+        # computeBaseVelocity();
+        #
+        # double odom_delta_x = (odom_vel_.linear.x * costh -
+        #                           odom_vel_.linear.y * sinth) * dt;
+        # double odom_delta_y = (odom_vel_.linear.x * sinth +
+        #                           odom_vel_.linear.y * costh) * dt;
+        # double odom_delta_th = odom_vel_.angular.z * dt;
+        #
+        # odom_.x += odom_delta_x;
+        # odom_.y += odom_delta_y;
+        # odom_.z += odom_delta_th;
+
         robot_radius = 0.34
         human_radius = 0.3
         radius_sum_ = robot_radius + human_radius
         radius_sum_sq_ = radius_sum_ * radius_sum_
-        r_vel = self.current_vel.linear
-        C = self.human_pose.pose.position - self.current_pose.pose.position
+
+        theta = self.current_vel.angular.z
+        r_vel = np.array([self.current_vel.linear.x*np.cos(theta) - self.current_vel.linear.y*np.sin(theta),
+                self.current_vel.linear.x*np.sin(theta) + self.current_vel.linear.y*np.cos(theta)])
+
+        theta_h = self.human_vel.angular.z
+        h_vel = np.array([self.human_vel.linear.x*np.cos(theta_h) - self.human_vel.linear.y*np.sin(theta_h),
+                self.human_vel.linear.x*np.sin(theta_h) + self.human_vel.linear.y*np.cos(theta_h)])
+
+        C = np.array([self.human_pose.position.x, self.human_pose.position.y]) - np.array([self.current_pose.position.x, self.current_pose.position.x])
         ttc = np.inf
         C_sq = np.dot(C,C)
 
         if C_sq <= radius_sum_sq_:
             ttc = 0.0
         else:
+            V = r_vel - h_vel
+            C_dot_V = np.dot(C,V)
+            if C_dot_V > 0:
+                V_sq = np.dot(V,V)
+                f = (C_dot_V * C_dot_V) - (V_sq * (C_sq - radius_sum_sq_))
+                if f > 0:
+                    ttc = (C_dot_V - math.sqrt(f)) / V_sq
+
+        print(ttc)
+
+        if ttc < np.inf:
+            self.ttc_arr.append(ttc)
+            self.ttc_arr_cost.append(self.penaltyBoundFromBelow(ttc, 10, 0.01)/C_sq)
+
+        else:
+            self.ttc_arr.append(-1.0)
 
 
 
+    def penaltyBoundFromBelow(self, var, a, eps):
+        if  var >= a+eps:
+            return 0.0
+        else:
+            return (-var + (a+eps))
+
+    def penaltyBoundFromAbove(self, var, a, eps):
+        if  var <= a-eps:
+            return 0.0
+        else:
+            return (var - (a-eps))
 
     def run(self):
         while(1):

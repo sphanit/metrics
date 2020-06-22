@@ -87,7 +87,7 @@ class PlotterHateb:
         # self.ax = self.fig.add_subplot(4,3,1)
 
         plt.ion()
-        rospy.init_node('plotter_hateb')
+        rospy.init_node('plotter_hateb_costs')
         rospy.Rate(10)
 
         # Use this for HATEB
@@ -291,26 +291,26 @@ class PlotterHateb:
         plt.plot(self.tmp_costs["HUMAN_ROBOT_TTCplus"],'r')
         plt.title("HUMAN_ROBOT_TTCplus")
 
-        plt.figure(3)
-        if(len(self.current_path.poses)!=0):
-            plt.plot(self.current_path.poses[0].pose.position.x, self.current_path.poses[0].pose.position.y,'r*')
-            plt.plot(self.actual_position_x, self.actual_position_y,'b')
-            # plt.axis('square')
-            plt.axis('equal')
-            plt.title('robot_path')
-
-        plt.figure(4)
-        if(len(self.current_path.poses)!=0):
-            plt.subplot(3,1,1)
-            plt.plot(self.robot_vel_x,'b')
-            plt.title('velocity_x')
-            plt.subplot(3,1,2)
-            plt.plot(self.robot_vel_y,'b')
-            plt.title('velocity_y')
-            plt.subplot(3,1,3)
-            plt.plot(self.robot_vel_theta,'b')
-            plt.title('velocity_theta')
-            plt.axis('equal')
+        # plt.figure(3)
+        # if(len(self.current_path.poses)!=0):
+        #     plt.plot(self.current_path.poses[0].pose.position.x, self.current_path.poses[0].pose.position.y,'r*')
+        #     plt.plot(self.actual_position_x, self.actual_position_y,'b')
+        #     # plt.axis('square')
+        #     plt.axis('equal')
+        #     plt.title('robot_path')
+        #
+        # plt.figure(4)
+        # if(len(self.current_path.poses)!=0):
+        #     plt.subplot(3,1,1)
+        #     plt.plot(self.robot_vel_x,'b')
+        #     plt.title('velocity_x')
+        #     plt.subplot(3,1,2)
+        #     plt.plot(self.robot_vel_y,'b')
+        #     plt.title('velocity_y')
+        #     plt.subplot(3,1,3)
+        #     plt.plot(self.robot_vel_theta,'b')
+        #     plt.title('velocity_theta')
+        #     plt.axis('equal')
 
         plt.pause(0.05)
         plt.draw()
