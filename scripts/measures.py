@@ -16,27 +16,10 @@ from actionlib_msgs.msg import GoalStatusArray
 from teb_local_planner.msg import OptimizationCostArray
 from geometry_msgs.msg import Pose, Twist
 import os
-#robot_pose_msg, op_costs, robot vel
-# costs to look at 0, 1 , 3, 4, 5, 6, 7, 8, 9, 10, 12 or 17
-#Cost types
-TIME_OPTIMALITY=0
-KINEMATIC_DD=1
-KINEMATIC_CL=2
-ROBOT_VEL=3
-HUMAN_VEL=4
-ROBOT_ACC=5
-HUMAN_ACC=6
-OBSTACLE=7
-DYNAMIC_OBSTACLE=8
-VIA_POINT=9
-HUMAN_ROBOT_SAFETY=10
-HUMAN_HUMAN_SAFETY=11
-HUMAN_ROBOT_TTC=12
-HUMAN_ROBOT_DIR=13
-HUMAN_ROBOT_MIN_DIST=14
-HUMAN_ROBOT_VISIBILITY=15
-HUMAN_ROBOT_TTClosest=16
-HUMAN_ROBOT_TTCplus=17
+from hanp_msgs.msg import TrackedHumans
+from hanp_msgs.msg import TrackedSegmentType
+from hanp_msgs.msg import TrackedSegment
+
 
 class PlotterHateb:
     def __init__(self):
@@ -63,22 +46,11 @@ class PlotterHateb:
         self.robot_vel_y = []
         self.robot_vel_theta = []
 
-        self.opcosts = []
-        self.costs_sum = OptimizationCostArray()
-        self.tmp_costs = {
-                    "TIME_OPTIMALITY" : [],
-                    "KINEMATIC_DD" : [],
-                    "ROBOT_VEL" : [],
-                    "HUMAN_VEL" : [],
-                    "ROBOT_ACC": [],
-                    "HUMAN_ACC": [],
-                    "OBSTACLE": [],
-                    "DYNAMIC_OBSTACLE": [],
-                    "VIA_POINT" : [],
-                    "HUMAN_ROBOT_SAFETY": [],
-                    "HUMAN_ROBOT_TTC": [],
-                    "HUMAN_ROBOT_TTCplus": []
-                }
+        self.current_pose = Pose()
+        self.current_vel = Twist()
+
+        self.human_pose = Pose()
+        self.human_vel = Twist()
 
 
         self.fig = plt.figure()
@@ -93,16 +65,10 @@ class PlotterHateb:
         # Use this for HATEB
         rospy.Subscriber("/move_base_node/TebLocalPlannerROS/local_plan",Path,self.pathCB)
         rospy.Subscriber("/move_base_node/TebLocalPlannerROS/traj_time",TimeToGoal,self.ttgCB)
-        rospy.Subscriber("/move_base_node/TebLocalPlannerROS/min_dist_human",Float64,self.minDistCB)
         rospy.Subscriber("/move_base/status",GoalStatusArray,self.totalTimeCB,queue_size=1)
-        rospy.Subscriber("/move_base_node/TebLocalPlannerROS/optimization_costs",OptimizationCostArray,self.opCostCB,queue_size=1)
         rospy.Subscriber("/move_base_node/TebLocalPlannerROS/Robot_Pose",Pose,self.poseCB,queue_size=1)
         rospy.Subscriber("/move_base_node/TebLocalPlannerROS/robot_vel",Twist,self.velCB,queue_size=1)
-
-
-        # Use this for S-TEB
-        # rospy.Subscriber("/move_base/TebLocalPlannerROS/local_plan",Path,self.pathCB)
-        # rospy.Subscriber("/move_base/TebLocalPlannerROS/traj_time",TimeToGoal,self.ttgCB)
+        rospy.Subscriber("/tracked_humans",TrackedHumans,self.humansCB)
 
         self.ttg_pub = rospy.Publisher('ttg', Float64, queue_size=1)
         self.ttg_prev_pub = rospy.Publisher('ttg_diff_prev', Float64, queue_size=1)
@@ -137,19 +103,11 @@ class PlotterHateb:
             self.current_path = msg
 
     def poseCB(self, msg):
-
-        # Use this when the robot pose is not being published
-        # (trans,rot) = self.listener.lookupTransform('/map', '/base_footprint', rospy.Time(0))
-        # (r,p,y) = euler_from_quaternion(rot)
-        #
-        # self.actual_position_x.append(trans[0])
-        # self.actual_position_y.append(trans[1])
-        # self.actual_position_theta.append(y)
-
         (r,p,y) = euler_from_quaternion([msg.orientation.x,msg.orientation.y,msg.orientation.z,msg.orientation.w])
         self.actual_position_x.append(msg.position.x)
         self.actual_position_y.append(msg.position.y)
         self.actual_position_theta.append(y)
+        self.current_pose = msg
 
 
     def ttgCB(self,msg):
@@ -195,103 +153,23 @@ class PlotterHateb:
             else:
                 self.total_time_pub.publish(-1.0)
 
-    def minDistCB(self,msg):
-        self.min_hum_dist = msg.data
-
     def velCB(self,msg):
         self.robot_vel_x.append(msg.linear.x)
         self.robot_vel_y.append(msg.linear.y)
         self.robot_vel_theta.append(msg.angular.z)
+        self.current_vel = msg
 
-    def opCostCB(self,msg):
-        if(len(self.costs_sum.costs)==0):
-            self.costs_sum = msg
-        else:
-            for i in range(0,len(msg.costs)):
-                self.costs_sum.costs[i].cost += msg.costs[i].cost
+    def humansCB(self, msg):
+        for human in msg.humans:
+            for segment in human.segments:
+                if segment.type==TrackedSegmentType.TORSO:
+                    self.human_pose = segment.pose.pose
+                    self.human_vel = segment.twist.twist
 
-        self.opcosts.append(msg)
-        for cost in msg.costs:
-            # print('costs=',cost)
-            if(cost.type==TIME_OPTIMALITY):
-                self.tmp_costs["TIME_OPTIMALITY"].append(cost.cost)
-            if(cost.type==KINEMATIC_DD):
-                self.tmp_costs["KINEMATIC_DD"].append(cost.cost)
-            if(cost.type==ROBOT_VEL):
-                self.tmp_costs["ROBOT_VEL"].append(cost.cost)
-            if(cost.type==HUMAN_VEL):
-                self.tmp_costs["HUMAN_VEL"].append(cost.cost)
-            if(cost.type==ROBOT_ACC):
-                self.tmp_costs["ROBOT_ACC"].append(cost.cost)
-            if(cost.type==HUMAN_ACC):
-                self.tmp_costs["HUMAN_ACC"].append(cost.cost)
-            if(cost.type==OBSTACLE):
-                self.tmp_costs["OBSTACLE"].append(cost.cost)
-            if(cost.type==DYNAMIC_OBSTACLE):
-                self.tmp_costs["DYNAMIC_OBSTACLE"].append(cost.cost)
-            if(cost.type==VIA_POINT):
-                self.tmp_costs["VIA_POINT"].append(cost.cost)
-            if(cost.type==HUMAN_ROBOT_SAFETY):
-                self.tmp_costs["HUMAN_ROBOT_SAFETY"].append(cost.cost)
-            if(cost.type==HUMAN_ROBOT_TTC):
-                self.tmp_costs["HUMAN_ROBOT_TTC"].append(cost.cost)
-            if(cost.type==HUMAN_ROBOT_TTCplus):
-                self.tmp_costs["HUMAN_ROBOT_TTCplus"].append(cost.cost)
-
-    def plot_costs_op(self):
+    def plot_traj(self):
         plt.clf()
 
         plt.figure(1)
-        plt.subplot(3,2,1)
-        plt.plot(self.tmp_costs["TIME_OPTIMALITY"],'r')
-        plt.title("TIME_OPTIMALITY ROBOT")
-
-        plt.subplot(3,2,2)
-        plt.plot(self.tmp_costs["KINEMATIC_DD"],'r')
-        plt.title("KINEMATIC_DD")
-
-        plt.subplot(3,2,3)
-        plt.plot(self.tmp_costs["ROBOT_VEL"],'r')
-        plt.title("ROBOT_VEL")
-
-        plt.subplot(3,2,4)
-        plt.plot(self.tmp_costs["HUMAN_VEL"],'b')
-        plt.title("HUMAN_VEL")
-
-        plt.subplot(3,2,5)
-        plt.plot(self.tmp_costs["ROBOT_ACC"],'r')
-        plt.title("ROBOT_ACC")
-
-        plt.subplot(3,2,6)
-        plt.plot(self.tmp_costs["HUMAN_ACC"],'b')
-        plt.title("HUMAN_ACC")
-
-        plt.figure(2)
-        plt.subplot(3,2,1)
-        plt.plot(self.tmp_costs["OBSTACLE"],'r')
-        plt.title("OBSTACLE")
-
-        plt.subplot(3,2,2) # Nothing
-        plt.plot(self.tmp_costs["DYNAMIC_OBSTACLE"],'r')
-        plt.title("DYNAMIC_OBSTACLE")
-
-        plt.subplot(3,2,3)
-        plt.plot(self.tmp_costs["VIA_POINT"],'r')
-        plt.title("VIA_POINT")
-
-        plt.subplot(3,2,4)
-        plt.plot(self.tmp_costs["HUMAN_ROBOT_SAFETY"],'r')
-        plt.title("HUMAN_ROBOT_SAFETY")
-
-        plt.subplot(3,2,5) #Nothing when TTCplus is used
-        plt.plot(self.tmp_costs["HUMAN_ROBOT_TTC"],'r')
-        plt.title("HUMAN_ROBOT_TTC")
-
-        plt.subplot(3,2,6) #Nothing when TTC is used
-        plt.plot(self.tmp_costs["HUMAN_ROBOT_TTCplus"],'r')
-        plt.title("HUMAN_ROBOT_TTCplus")
-
-        plt.figure(3)
         if(len(self.current_path.poses)!=0):
             plt.plot(self.current_path.poses[0].pose.position.x, self.current_path.poses[0].pose.position.y,'r*')
             plt.plot(self.actual_position_x, self.actual_position_y,'b')
@@ -299,7 +177,7 @@ class PlotterHateb:
             plt.axis('equal')
             plt.title('robot_path')
 
-        plt.figure(4)
+        plt.figure(2)
         if(len(self.current_path.poses)!=0):
             plt.subplot(3,1,1)
             plt.plot(self.robot_vel_x,'b')
@@ -312,35 +190,33 @@ class PlotterHateb:
             plt.title('velocity_theta')
             plt.axis('equal')
 
-        plt.pause(0.05)
+        plt.pause(0.00001)
         plt.draw()
-        # self.fig.tight_layout(pad=3.0)
         plt.show()
+
+    def cal_ttc(self):
+        robot_radius = 0.34
+        human_radius = 0.3
+        radius_sum_ = robot_radius + human_radius
+        radius_sum_sq_ = radius_sum_ * radius_sum_
+        r_vel = self.current_vel.linear
+        C = self.human_pose.pose.position - self.current_pose.pose.position
+        ttc = np.inf
+        C_sq = np.dot(C,C)
+
+        if C_sq <= radius_sum_sq_:
+            ttc = 0.0
+        else:
+
+
 
 
     def run(self):
         while(1):
-            self.plot_costs_op()
+            self.plot_traj()
             time.sleep(0.1)
-        # rospy.spin()
-
-
 
 
 if __name__ == "__main__":
     plotter = PlotterHateb()
     plotter.run()
-
-    # For running just ros
-    # rospy.spin()
-
-    ## For drawing
-    #while(1):
-    #    now = rospy.Time.now()
-    #    if (now-compare.last_time).secs > 1.0:
-    #        compare.first_path.poses = []
-    #        compare.done = False
-
-    #    compare.ttg_draw()
-    #    plt.show()
-    #    time.sleep(0.1)
