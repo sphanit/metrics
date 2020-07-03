@@ -160,7 +160,7 @@ class PlotterHateb:
             self.done = True
             self.ttg_prev = msg.time_to_goal.to_sec()
             self.ttg_current = self.ttg_prev
-
+k
         # print((msg.time_to_goal - self.first_ttg).to_sec())
         else:
             self.ttg_prev = self.ttg_current
