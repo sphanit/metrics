@@ -23,6 +23,8 @@ from hanp_msgs.msg import TrackedSegment
 HUMAN_ROBOT_TTC=12
 HUMAN_ROBOT_TTCplus=17
 HUMAN_ROBOT_VISIBILITY=15
+STATIC = 0
+DYN = 1
 
 class PlotterHateb:
     def __init__(self):
@@ -42,6 +44,7 @@ class PlotterHateb:
         self.done = False
         self.flag = True
         self.start = False
+        self.finished = True
         self.min_hum_dist = -1.0
         self.total_time = -1.0
         self.cost_ttc = 0
@@ -155,16 +158,29 @@ class PlotterHateb:
         #
         # self.opcosts.append(msg)
         self.start = True
-        self.cal_ttcplus()
-
+        self.finished = False
+        cost_value = 0.0
+        costs_array = []
+        # print("opCostcb")
         for cost in msg.costs:
             # print('costs=',cost)
             if(cost.type==HUMAN_ROBOT_TTC):
-                self.tmp_costs["HUMAN_ROBOT_TTC"].append(cost.cost)
+                cost_value = cost.cost
+                costs_array = cost.costs_arr
+                self.tmp_costs["HUMAN_ROBOT_TTC"].append([cost_value, costs_array])
+                self.cal_ttc()
             if(cost.type==HUMAN_ROBOT_TTCplus):
-                self.tmp_costs["HUMAN_ROBOT_TTCplus"].append(cost.cost)
+                cost_value = cost.cost
+                costs_array = cost.costs_arr
+                print(cost.costs_arr)
+
+                self.tmp_costs["HUMAN_ROBOT_TTCplus"].append([cost_value, costs_array])
+                self.cal_ttcplus()
             if(cost.type==HUMAN_ROBOT_VISIBILITY):
-                self.tmp_costs["HUMAN_ROBOT_VISIBILITY"].append(cost.cost)
+                cost_value = cost.cost
+                costs_array = cost.costs_arr
+                self.tmp_costs["HUMAN_ROBOT_VISIBILITY"].append([cost_value, costs_array])
+                self.cal_visibility()
 
 
     def ttgCB(self,msg):
@@ -230,20 +246,21 @@ class PlotterHateb:
                     self.human_theta = y
 
 
-    def plot_traj(self):
+    def plot_traj(self,msg):
         # Use this when the robot pose is not being published
-        self.listener.waitForTransform("/map", "/base_footprint", rospy.Time(), rospy.Duration(0.05))
-        (trans,rot) = self.listener.lookupTransform('map', 'base_footprint', rospy.Time(0))
-        (r,p,y) = euler_from_quaternion(rot)
+        # self.listener.waitForTransform("/map", "/base_footprint", rospy.Time(), rospy.Duration(0.05))
+        # (trans,rot) = self.listener.lookupTransform('map', 'base_footprint', rospy.Time(0))
+        # (r,p,y) = euler_from_quaternion(rot)
+        #
+        # self.current_pose.position.x = trans[0]
+        # self.current_pose.position.y = trans[1]
+        # self.current_pose.position.z = trans[2]
+        # self.current_pose.orientation.x = rot[0]
+        # self.current_pose.orientation.y = rot[1]
+        # self.current_pose.orientation.z = rot[2]
+        # self.current_pose.orientation.w = rot[3]
+        # self.robot_theta = y
 
-        self.current_pose.position.x = trans[0]
-        self.current_pose.position.y = trans[1]
-        self.current_pose.position.z = trans[2]
-        self.current_pose.orientation.x = rot[0]
-        self.current_pose.orientation.y = rot[1]
-        self.current_pose.orientation.z = rot[2]
-        self.current_pose.orientation.w = rot[3]
-        self.robot_theta = y
         # plt.figure(1)
         # if(len(self.current_path.poses)!=0):
         #     plt.plot(self.current_path.poses[0].pose.position.x, self.current_path.poses[0].pose.position.y,'r*')
@@ -264,18 +281,21 @@ class PlotterHateb:
         #     plt.plot(self.robot_vel_theta,'b')
         #     plt.title('velocity_theta')
         #     plt.axis('equal')
-
         plt.figure(1)
         plt.clf()
-        plt.plot(self.ttc_arr_cost,'b')
+        if msg == "HUMAN_ROBOT_TTCplus" or "HUMAN_ROBOT_TTC":
+            plt.plot(self.ttc_arr_cost,'b')
+        elif msg == "HUMAN_ROBOT_VISIBILITY":
+            plt.plot(self.visibility_arr_cost,'b')
         # plt.axis('equal')
-        plt.title('TTCplus_calculated')
+        plt.title('Calculated')
 
         plt.figure(2)
         plt.clf()
-        plt.plot(self.tmp_costs["HUMAN_ROBOT_TTCplus"],'r')
+        idx = len(self.tmp_costs[msg])-1
+        plt.plot(self.tmp_costs[msg][idx][1],'r')
         # plt.axis('equal')
-        plt.title('TTCplus_Optim')
+        plt.title('Optim')
 
         plt.figure(3)
         plt.clf()
@@ -316,7 +336,7 @@ class PlotterHateb:
 
 
         # ax.add_artist(circle1)
-
+        # plt.pause(0.05)
         plt.pause(0.05)
         plt.draw()
         plt.show()
@@ -541,12 +561,21 @@ class PlotterHateb:
         return xtng, ytng
 
 
-    def run(self):
-        while(1):
-            self.plot_traj()
-            time.sleep(0.1)
+    def run_plotter(self, msg, mode):
+        if mode == STATIC and not self.finished:
+            self.plot_traj(msg)
+            self.finished = True
+        elif mode == DYN and not self.finished:
+            self.plot_traj(msg)
 
 
 if __name__ == "__main__":
     plotter = PlotterHateb()
-    plotter.run()
+    cost = "HUMAN_ROBOT_TTCplus"
+    mode = DYN
+    while True:
+        try:
+            plotter.run_plotter(cost, mode)
+            time.sleep(0.1)
+        except KeyboardInterrupt:
+            break
