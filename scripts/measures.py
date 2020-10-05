@@ -20,9 +20,26 @@ from hanp_msgs.msg import TrackedHumans
 from hanp_msgs.msg import TrackedSegmentType
 from hanp_msgs.msg import TrackedSegment
 
+
+TIME_OPTIMALITY=0
+KINEMATIC_DD=1
+KINEMATIC_CL=2
+ROBOT_VEL=3
+HUMAN_VEL=4
+ROBOT_ACC=5
+HUMAN_ACC=6
+OBSTACLE=7
+DYNAMIC_OBSTACLE=8
+VIA_POINT=9
+HUMAN_ROBOT_SAFETY=10
+HUMAN_HUMAN_SAFETY=11
 HUMAN_ROBOT_TTC=12
-HUMAN_ROBOT_TTCplus=17
+HUMAN_ROBOT_DIR=13
+HUMAN_ROBOT_MIN_DIST=14
 HUMAN_ROBOT_VISIBILITY=15
+HUMAN_ROBOT_TTClosest=16
+HUMAN_ROBOT_TTCplus=17
+
 STATIC = 0
 DYN = 1
 
@@ -54,6 +71,7 @@ class PlotterHateb:
         self.ttc_arr_cost = []
         self.safety_arr_cost = []
         self.visibility_arr_cost = []
+        self.directionality_arr_cost = []
         self.robot_vel_x = []
         self.robot_vel_y = []
         self.robot_vel_theta = []
@@ -93,6 +111,11 @@ class PlotterHateb:
         self.ttg_first_pub = rospy.Publisher('ttg_diff_start', Float64, queue_size=1)
         self.total_time_pub = rospy.Publisher('total_time', Float64, queue_size=1)
 
+        self.ttcplus_pub = rospy.Publisher('ttcplus', Float64, queue_size=1)
+        self.safety_pub = rospy.Publisher('safety', Float64, queue_size=1)
+        self.visibility_pub = rospy.Publisher('visibility', Float64, queue_size=1)
+        self.directionality_pub = rospy.Publisher('rel_vel', Float64, queue_size=1)
+
         self.tmp_costs = {
                     "TIME_OPTIMALITY" : [],
                     "KINEMATIC_DD" : [],
@@ -106,7 +129,8 @@ class PlotterHateb:
                     "HUMAN_ROBOT_SAFETY": [],
                     "HUMAN_ROBOT_TTC": [],
                     "HUMAN_ROBOT_TTCplus": [],
-                    "HUMAN_ROBOT_VISIBILITY" : []
+                    "HUMAN_ROBOT_VISIBILITY" : [],
+                    "HUMAN_ROBOT_DIR" : []
                 }
 
         self.listener = tf.TransformListener()
@@ -146,7 +170,7 @@ class PlotterHateb:
         self.actual_position_x.append(msg.position.x)
         self.actual_position_y.append(msg.position.y)
         self.actual_position_theta.append(y)
-            # self.current_pose = msg
+        # self.current_pose = msg
         # self.robot_theta = y
 
     def opCostCB(self,msg):
@@ -168,19 +192,24 @@ class PlotterHateb:
                 cost_value = cost.cost
                 costs_array = cost.costs_arr
                 self.tmp_costs["HUMAN_ROBOT_TTC"].append([cost_value, costs_array])
-                self.cal_ttc()
+                # self.cal_ttc()
             if(cost.type==HUMAN_ROBOT_TTCplus):
                 cost_value = cost.cost
                 costs_array = cost.costs_arr
-                print(cost.costs_arr)
-
                 self.tmp_costs["HUMAN_ROBOT_TTCplus"].append([cost_value, costs_array])
-                self.cal_ttcplus()
             if(cost.type==HUMAN_ROBOT_VISIBILITY):
                 cost_value = cost.cost
                 costs_array = cost.costs_arr
                 self.tmp_costs["HUMAN_ROBOT_VISIBILITY"].append([cost_value, costs_array])
-                self.cal_visibility()
+            if(cost.type==HUMAN_ROBOT_DIR):
+                cost_value = cost.cost
+                costs_array = cost.costs_arr
+                self.tmp_costs["HUMAN_ROBOT_DIR"].append([cost_value, costs_array])
+            if(cost.type==HUMAN_ROBOT_SAFETY):
+                cost_value = cost.cost
+                costs_array = cost.costs_arr
+                self.tmp_costs["HUMAN_ROBOT_SAFETY"].append([cost_value, costs_array])
+                # self.cal_visibility()
 
 
     def ttgCB(self,msg):
@@ -245,6 +274,27 @@ class PlotterHateb:
                     (r,p,y) = euler_from_quaternion([tp.x,tp.y,tp.z,tp.w])
                     self.human_theta = y
 
+
+    def get_robot_pose(self,event=None):
+        self.listener.waitForTransform("/map", "/base_footprint", rospy.Time(), rospy.Duration(0.1))
+        (trans,rot) = self.listener.lookupTransform('map', 'base_footprint', rospy.Time(0))
+        (r,p,y) = euler_from_quaternion(rot)
+
+        self.current_pose.position.x = trans[0]
+        self.current_pose.position.y = trans[1]
+        self.current_pose.position.z = trans[2]
+        self.current_pose.orientation.x = rot[0]
+        self.current_pose.orientation.y = rot[1]
+        self.current_pose.orientation.z = rot[2]
+        self.current_pose.orientation.w = rot[3]
+        self.robot_theta = y
+
+        self.cal_safety()
+        self.cal_ttcplus()
+        self.cal_directinality()
+        self.cal_visibility()
+        self.start = False
+        # print(self.current_pose)
 
     def plot_traj(self,msg):
         # Use this when the robot pose is not being published
@@ -427,6 +477,7 @@ class PlotterHateb:
             C_sq = np.dot(C,C)
             # print(C_sq)
             # print(C)
+            ttc_cost = 0.0
 
             if C_sq <= radius_sum_sq_:
                 ttc = 0.0
@@ -440,6 +491,8 @@ class PlotterHateb:
                     f = (C_dot_V * C_dot_V) - (V_sq * (C_sq - radius_sum_sq_))
                     if f > 0:
                         ttc = (C_dot_V - math.sqrt(f)) / V_sq
+                    # else:
+                    #     ttc = (C_dot_V)/(math.sqrt(C_sq)*math.sqrt(V_sq))*((C_dot_V - math.sqrt(f)) / V_sq)
 
             # print(ttc)
 
@@ -452,11 +505,13 @@ class PlotterHateb:
                 if self.r_dt >= 1.0:
                     self.ttc_arr.append(ttc)
                     # tp = self.penaltyBoundFromBelow(ttc, 10.0, 0.01)/C_sq
-                    tp = self.penaltyBoundFromBelow(ttc, 10.0, 0.01)
-                    self.ttc_arr_cost.append(tp*tp)
+                    tp = self.penaltyBoundFromBelow(ttc, 5.0, 0.01)
+                    self.ttc_arr_cost.append(tp)
+                    ttc_cost = tp
                 else:
                     self.ttc_arr.append(-1.0)
                     self.ttc_arr_cost.append(0.0)
+                    ttc_cost = 0.0
 
             else:
                 now = rospy.Time.now()
@@ -467,34 +522,79 @@ class PlotterHateb:
                     self.r_dt_miss =0.0
 
                 self.ttc_arr_cost.append(0.0)
+                ttc_cost = 0.0
                 self.ttc_arr.append(-1.0)
+        else:
+            ttc_cost = 0.0
+
+        self.ttcplus_pub.publish(ttc_cost)
+
 
     def cal_safety(self):
-        robot_radius = 0.34
-        human_radius = 0.3
-        radius_sum_ = robot_radius + human_radius
+        if self.start:
+            robot_radius = 0.34
+            human_radius = 0.3
+            radius_sum_ = robot_radius + human_radius
 
-        hr_dist = np.linalg.norm([self.current_pose.position.x-self.human_pose.position.x,self.current_pose.position.y-self.human_pose.position.y])
-        hr_dist = hr_dist - radius_sum_
-        tp = self.penaltyBoundFromBelow(hr_dist, 0.5, 0.01)
-        self.safety_arr.append(tp)
-        self.safety_arr_cost.append(tp*tp)
+            hr_dist = np.linalg.norm([self.current_pose.position.x-self.human_pose.position.x,self.current_pose.position.y-self.human_pose.position.y])
+            hr_dist = hr_dist - radius_sum_
+            tp = self.penaltyBoundFromBelowQuad(hr_dist, 0.5, 0.01)
+            self.safety_arr.append(tp)
+            error = 5.*tp
+            self.safety_arr_cost.append(5.*tp)
+        else:
+            error = 0.0
+
+        self.safety_pub.publish(error)
 
     def cal_visibility(self):
-        d_rtoh = np.array([self.human_pose.position.x, self.human_pose.position.y]) - np.array([self.current_pose.position.x, self.current_pose.position.y])
-        d_htor = np.array([self.current_pose.position.x, self.current_pose.position.y]) - np.array([self.human_pose.position.x, self.human_pose.position.y])
-        humanLookAt = np.array([math.cos(self.human_theta), math.sin(self.human_theta)])
+        if self.start:
+            d_rtoh = np.array([self.human_pose.position.x, self.human_pose.position.y]) - np.array([self.current_pose.position.x, self.current_pose.position.y])
+            d_htor = np.array([self.current_pose.position.x, self.current_pose.position.y]) - np.array([self.human_pose.position.x, self.human_pose.position.y])
+            humanLookAt = np.array([math.cos(self.human_theta), math.sin(self.human_theta)])
+            robotLookAt = np.array([math.cos(self.robot_theta), math.sin(self.robot_theta)])
 
-        deltaPsi = abs(math.acos(np.dot(humanLookAt,d_htor)/(np.linalg.norm(humanLookAt)*np.linalg.norm(d_htor))))
-        if deltaPsi >= np.pi/3:
-            c_visibility = 5*((2*math.pow(2,-(math.pow(d_rtoh[0],2)))) + (2*math.pow(2,-(math.pow(d_rtoh[1],2)))))
-        else:
+            deltaPsi = abs(math.acos(np.dot(humanLookAt,d_htor)/(np.linalg.norm(humanLookAt)*np.linalg.norm(d_htor))))
+            ang = np.dot(humanLookAt,robotLookAt)
             c_visibility = 0.0
+            if deltaPsi >= np.pi/2:
+                if(ang>=0):
+                    c_visibility = 5*((2*math.pow(2,-(math.pow(d_rtoh[0],2)))) * (2*math.pow(2,-(math.pow(d_rtoh[1],2)))))
+                else:
+                    c_visibility = 0.0
 
-        self.visibility_arr.append(c_visibility)
+            self.visibility_arr.append(c_visibility)
 
-        tp = self.penaltyBoundFromAbove(c_visibility, 1.5, 0.01)
-        self.visibility_arr_cost.append(tp*tp)
+            tp = self.penaltyBoundFromAbove(c_visibility, 2.5, 0.01)
+            self.visibility_arr_cost.append(5.*tp)
+            error = 5.*tp
+        else:
+            error = 0.0
+
+        self.visibility_pub.publish(error)
+
+    def cal_directinality(self):
+        if self.start:
+            theta = self.robot_theta
+            r_vel = np.array([self.current_vel.linear.x*np.cos(theta) - self.current_vel.linear.y*np.sin(theta),
+                    self.current_vel.linear.x*np.sin(theta) + self.current_vel.linear.y*np.cos(theta)])
+
+            theta_h = self.human_theta
+
+            h_vel = np.array([self.human_vel.linear.x, self.human_vel.linear.y])
+
+            d_rtoh = np.array([self.human_pose.position.x, self.human_pose.position.y]) - np.array([self.current_pose.position.x, self.current_pose.position.y])
+            d_htor = np.array([self.current_pose.position.x, self.current_pose.position.y]) - np.array([self.human_pose.position.x, self.human_pose.position.y])
+
+            dir_cost = (max(np.dot(r_vel,d_rtoh)+np.linalg.norm(r_vel),0.0) + 1) / np.linalg.norm(d_rtoh)
+            tp = self.penaltyBoundFromAbove(dir_cost, 1.0, 0.01)
+            self.directionality_arr_cost.append(tp)
+            error = tp
+        else:
+            error = 0.0
+
+        self.directionality_pub.publish(error)
+
 
     def penaltyBoundFromBelow(self, var, a, eps):
         if  var >= a+eps:
@@ -507,6 +607,14 @@ class PlotterHateb:
             return 0.0
         else:
             return (var - (a-eps))
+
+
+    def penaltyBoundFromBelowQuad(self, var, a, eps):
+        if var >= a + eps:
+            return 0.0
+        else:
+            return ((a+eps-var)**2)+(a+eps-var)
+
 
     def add_arrow(self, line, position=None, direction='right', size=15, color=None):
         """
@@ -568,14 +676,18 @@ class PlotterHateb:
         elif mode == DYN and not self.finished:
             self.plot_traj(msg)
 
+    def run_node(self):
+        rospy.Timer(rospy.Duration(1.0/10.0), self.get_robot_pose)
+        rospy.spin()
 
 if __name__ == "__main__":
     plotter = PlotterHateb()
-    cost = "HUMAN_ROBOT_TTCplus"
-    mode = DYN
-    while True:
-        try:
-            plotter.run_plotter(cost, mode)
-            time.sleep(0.1)
-        except KeyboardInterrupt:
-            break
+    plotter.run_node()
+    # cost = "HUMAN_ROBOT_TTCplus"
+    # mode = DYN
+    # while True:
+    #     try:
+    #         plotter.run_plotter(cost, mode)
+    #         time.sleep(0.1)
+    #     except KeyboardInterrupt:
+    #         break
